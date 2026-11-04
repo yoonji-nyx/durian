@@ -1,0 +1,11 @@
+git config --global user.name "Jaewoo2580"
+git config --global user.email "본인@이메일"
+git commit -m "chore: initial CI/CD scaffold"
+git push -u origin main
+
+cd ~/Documents/gha-runner-starter
+git init -b main
+git add .
+git commit -m "chore: initial CI/CD scaffold"
+git remote add origin <https://github.com/><owner>/<repo>.git
+git push -u origin main
