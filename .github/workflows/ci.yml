@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # 가벼운 검사는 GitHub-hosted runner 사용 (분량 소모 적음)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Lint
+        working-directory: app
+        run: npm run lint
+      - name: Test
+        working-directory: app
+        run: npm test
+
+  docker-verify:
+    # 이미지 빌드 검증 (push 없음). runner 전환은 repo 변수 BUILD_RUNNER 참고
+    runs-on: ${{ fromJSON(vars.BUILD_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

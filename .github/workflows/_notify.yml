@@ -1,0 +1,42 @@
+name: Notify
+
+on:
+  workflow_call:
+    inputs:
+      status:
+        required: true
+        type: string
+    secrets:
+      DISCORD_WEBHOOK_URL:
+        required: false
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Send Discord message
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          STATUS: ${{ inputs.status }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK_URL 이 설정되지 않아 알림을 건너뜁니다."
+            exit 0
+          fi
+          if [ "$STATUS" = "success" ]; then
+            TITLE="✅ 배포 성공"; COLOR=3066993
+          else
+            TITLE="❌ 파이프라인 실패"; COLOR=15158332
+          fi
+          jq -n \
+            --arg title "$TITLE" \
+            --arg desc "**$REPO** @ ${SHA:0:7}\nby $ACTOR" \
+            --arg url "$RUN_URL" \
+            --argjson color "$COLOR" \
+            '{embeds: [{title: $title, description: ($desc | gsub("\\\\n"; "\n")), url: $url, color: $color}]}' \
+          | curl -sS -f -H "Content-Type: application/json" -d @- "$WEBHOOK"

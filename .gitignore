@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+*.pem
+*.key
+credentials
+*.tfvars
+!example.tfvars
+.DS_Store

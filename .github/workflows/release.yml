@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # GHCR 이미지 이름은 소문자여야 함. 아래 build 단계에서 소문자로 변환
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    # 기본: ubuntu-latest / self-hosted 전환: Repository variable BUILD_RUNNER = ["self-hosted","linux","ec2"]
+    runs-on: ${{ fromJSON(vars.BUILD_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.vars.outputs.tag }}
+      image: ${{ steps.vars.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        working-directory: app
+        run: |
+          npm run lint
+          npm test
+
+      - id: vars
+        run: |
+          echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 배포 단계 (현재는 자리표시자).
+  # 이후 gitops 저장소의 이미지 태그를 수정하는 단계로 교체 (ArgoCD가 반영)
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - run: echo "TODO deploy ${{ needs.build.outputs.image }}:${{ needs.build.outputs.tag }} to staging"
+
+  # production Environment에 Required reviewers를 설정하면 승인 후 실행됨
+  deploy-prod:
+    needs: [build, deploy-staging]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: echo "TODO deploy ${{ needs.build.outputs.image }}:${{ needs.build.outputs.tag }} to production"
+
+  notify:
+    if: ${{ always() }}
+    needs: [build, deploy-staging, deploy-prod]
+    uses: ./.github/workflows/_notify.yml
+    secrets: inherit
+    with:
+      status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
