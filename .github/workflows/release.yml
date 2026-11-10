@@ -58,22 +58,66 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # 배포 단계 (현재는 자리표시자).
-  # 이후 gitops 저장소의 이미지 태그를 수정하는 단계로 교체 (ArgoCD가 반영)
+  # 배포 = gitops 저장소의 이미지 태그를 수정해 push (이후 ArgoCD가 반영)
+  # 필요: Secret GITOPS_TOKEN (fine-grained PAT, gitops 저장소 Contents: Read and write)
+  # 선택: Variable GITOPS_REPO (기본 Jaewoo2580/cicd-platform-gitops)
   deploy-staging:
     needs: build
     runs-on: ubuntu-latest
     environment: staging
+    timeout-minutes: 5
     steps:
-      - run: echo "TODO deploy ${{ needs.build.outputs.image }}:${{ needs.build.outputs.tag }} to staging"
+      - name: Update staging tag in gitops repo
+        env:
+          GITOPS_REPO: ${{ vars.GITOPS_REPO || 'Jaewoo2580/cicd-platform-gitops' }}
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          TAG: ${{ needs.build.outputs.tag }}
+          OVERLAY: staging
+        run: |
+          if [ -z "$GITOPS_TOKEN" ]; then echo "::error::GITOPS_TOKEN secret is not set"; exit 1; fi
+          git clone "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPO}.git" gitops
+          cd gitops
+          f="apps/sample-app/overlays/${OVERLAY}/kustomization.yaml"
+          sed -i -E "s|^(\s*newName:).*|\1 ${IMAGE}|; s|^(\s*newTag:).*|\1 ${TAG}|" "$f"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then echo "no change"; exit 0; fi
+          git commit -am "deploy(${OVERLAY}): ${TAG} (${GITHUB_REPOSITORY}@${GITHUB_SHA::7})"
+          for i in 1 2 3; do
+            git push origin HEAD:main && break
+            git pull --rebase origin main
+          done
 
   # production Environment에 Required reviewers를 설정하면 승인 후 실행됨
+  # prod ArgoCD Application은 수동 Sync이므로 Argo UI에서 Sync해야 실제 반영됨
   deploy-prod:
     needs: [build, deploy-staging]
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 5
     steps:
-      - run: echo "TODO deploy ${{ needs.build.outputs.image }}:${{ needs.build.outputs.tag }} to production"
+      - name: Update prod tag in gitops repo
+        env:
+          GITOPS_REPO: ${{ vars.GITOPS_REPO || 'Jaewoo2580/cicd-platform-gitops' }}
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          TAG: ${{ needs.build.outputs.tag }}
+          OVERLAY: prod
+        run: |
+          if [ -z "$GITOPS_TOKEN" ]; then echo "::error::GITOPS_TOKEN secret is not set"; exit 1; fi
+          git clone "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPO}.git" gitops
+          cd gitops
+          f="apps/sample-app/overlays/${OVERLAY}/kustomization.yaml"
+          sed -i -E "s|^(\s*newName:).*|\1 ${IMAGE}|; s|^(\s*newTag:).*|\1 ${TAG}|" "$f"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then echo "no change"; exit 0; fi
+          git commit -am "deploy(${OVERLAY}): ${TAG} (${GITHUB_REPOSITORY}@${GITHUB_SHA::7})"
+          for i in 1 2 3; do
+            git push origin HEAD:main && break
+            git pull --rebase origin main
+          done
 
   notify:
     if: ${{ always() }}

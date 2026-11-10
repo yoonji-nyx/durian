@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
     paths-ignore:
       - '**.md'
@@ -16,8 +17,8 @@ permissions:
 
 jobs:
   test:
-    # 가벼운 검사는 GitHub-hosted runner 사용 (분량 소모 적음)
-    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    runs-on: ${{ fromJSON(vars.BUILD_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +33,7 @@ jobs:
         run: npm test
 
   docker-verify:
+    if: github.event.pull_request.draft == false
     # 이미지 빌드 검증 (push 없음). runner 전환은 repo 변수 BUILD_RUNNER 참고
     runs-on: ${{ fromJSON(vars.BUILD_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 15
